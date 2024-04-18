@@ -1,0 +1,13 @@
+mysql_backup_db_host: "localhost"
+mysql_backup_db_user: "root"
+mysql_backup_db_password: "root"
+mysql_backup_db_name: "test"
+mysql_backup_local_dir: "/tmp/mysql-backup"
+mysql_backup_remote_storage: "gcp"
+mysql_backup_bucket_name: "backups"
+mysql_backup_bucket_dir: "mysql"
+mysql_backup_use_compression: true
+mysql_backup_delete_locally: false
+mysql_backup_skip_when_delete_locally: 0
+mysql_backup_telergam_api_token: ""
+mysql_backup_telegram_chat_id: ""
