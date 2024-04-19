@@ -3,6 +3,7 @@ mysql_backup_db_user: "root"
 mysql_backup_db_password: "root"
 mysql_backup_db_name: "test"
 mysql_backup_local_dir: "/tmp/mysql-backup"
+mysql_backup_disk_space_threshold: 80
 mysql_backup_remote_storage: "none" # gcs/s3 supported
 mysql_backup_bucket_name: "backups"
 mysql_backup_bucket_dir: "mysql"
