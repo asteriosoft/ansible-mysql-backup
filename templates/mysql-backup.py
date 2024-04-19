@@ -29,6 +29,13 @@ mysqlDBName = "{{ mysql_backup_db_name }}"
 telergamApiToken = "{{ mysql_backup_telergam_api_token }}"
 telegramChatId = "{{ mysql_backup_telegram_chat_id }}"
 
+if remoteStorage == "gcs":
+    # Use GOOGLE_APPLICATION_CREDENTIALS env variable for GCP access
+    gcs_client = storage.Client()
+
+if remoteStorage == "s3":
+    # Use AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and AWS_DEFAULT_REGION env variables for AWS access
+    s3_client = boto3.client('s3')
 
 def send_to_telegram(api_token,chat_id,message):
     if ( api_token and chat_id ):
@@ -85,9 +92,9 @@ def upload_to_s3(bucket_name, bucket_dir, backup_name):
 
 def check_remote_exists_gcs(bucket_name, bucket_dir, backup_name):
     try:
-        bucket = storage_client.bucket(bucket_name)
+        bucket = gcs_client.bucket(bucket_name)
         if bucket.exists():
-            stats = storage.Blob(bucket=bucket, name=f"{bucket_dir}/{backup_name}").exists(storage_client)
+            stats = storage.Blob(bucket=bucket, name=f"{bucket_dir}/{backup_name}").exists(gcs_client)
             return stats
         else:
             logging.error(f"The gcs bucket {bucket_name} does not exist")
@@ -98,7 +105,7 @@ def check_remote_exists_gcs(bucket_name, bucket_dir, backup_name):
         logging.error(f'Exception raised. {format(str(error))}')
 
 def upload_to_gcs(bucket_name, bucket_dir, backup_name):
-    bucket = storage_client.bucket(bucket_name)
+    bucket = gcs_client.bucket(bucket_name)
     if os.path.isfile(backup_name):
         try:
             blob = bucket.blob(f"{bucket_dir}/{backup_name}")
@@ -133,13 +140,9 @@ def main():
         delete_local_backup(backupName)
     for index, file in enumerate(sorted(os.listdir(backupDir), reverse=True, key=os.path.getmtime)):
         if remoteStorage == "gcs":
-            # Use GOOGLE_APPLICATION_CREDENTIALS env variable for GCP access
-            storage_client = storage.Client()
             if not check_remote_exists_gcs(bucketName, bucketDir, file):
                 upload_to_gcs(bucketName, bucketDir, file)
         if remoteStorage == "s3":
-            # Use AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and AWS_DEFAULT_REGION env variables for AWS access
-            s3_client = boto3.client('s3')
             if not check_remote_exists_s3(bucketName, bucketDir, file):
                 upload_to_s3(bucketName, bucketDir, file)
         if deleteLocally and index >= skipWhenDelete:

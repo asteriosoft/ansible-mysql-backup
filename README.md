@@ -16,21 +16,19 @@ Example Playbook
   gather_facts: yes
 
   vars:
-    clickhouse_backup_version: "2.4.35"
-    clickhouse_backup_remote_storage: "s3"
-    clickhouse_backup_user: "default"
-    clickhouse_backup_password: ""
-    clickhouse_backup_tables: "default.test"
-    clickhouse_backup_port: 9000
-    clickhouse_backup_bucket_name: "backups"
-    clickhouse_backup_bucket_path: "clickhouse"
-    clickhouse_backup_compression_level: 6
-    clickhouse_backup_compression_format: "gzip"
-    clickhouse_backup_concurrency: 2
-    clickhouse_backup_api_enable: true
-    clickhouse_backup_api_listener: "0.0.0.0:7171"
+    mysql_backup_db_host: "localhost"
+    mysql_backup_db_user: "backup_user"
+    mysql_backup_db_password: "backup_password"
+    mysql_backup_db_name: "test"
+    mysql_backup_local_dir: "/root/mysql-backup"
+    mysql_backup_use_compression: true
+    mysql_backup_delete_locally: true
+    mysql_backup_skip_when_delete_locally: 5
+    mysql_backup_remote_storage: "s3"
+    mysql_backup_bucket_name: "backups"
+    mysql_backup_bucket_dir: "mysql"
       
   roles:
-    - clickhouse-backup
+    - mysql-backup
 ```
 
