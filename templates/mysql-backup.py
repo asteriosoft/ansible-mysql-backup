@@ -1,19 +1,22 @@
 #!/usr/bin/python3
 
-from google.cloud import storage
+import sys
 import os
 import shutil
-import glob
 import tarfile
 import logging
 import subprocess
 import time
 import requests
+import boto3
+from botocore.errorfactory import ClientError
+from google.cloud import storage
 
 logging.basicConfig(format="%(asctime)s:%(levelname)s:%(message)s", level=logging.INFO)
 
 backupDir = "{{ mysql_backup_local_dir }}"
 backupName = f"{time.strftime('%Y%m%d.%H%M')}.sql"
+remoteStorage = "{{ mysql_backup_remote_storage }}"
 bucketName = "{{ mysql_backup_bucket_name }}"
 bucketDir = "{{ mysql_backup_bucket_dir }}"
 useCompression = {{ mysql_backup_use_compression }}
@@ -26,7 +29,6 @@ mysqlDBName = "{{ mysql_backup_db_name }}"
 telergamApiToken = "{{ mysql_backup_telergam_api_token }}"
 telegramChatId = "{{ mysql_backup_telegram_chat_id }}"
 
-storage_client = storage.Client()
 
 def send_to_telegram(api_token,chat_id,message):
     if ( api_token and chat_id ):
@@ -44,11 +46,56 @@ def create_mysql_backup(db_host,db_user,db_password,db_name,backup_name):
     else:
         logging.error(f"Backup {backup_name} creation failed with return code {process.returncode}")
         send_to_telegram(telergamApiToken, telegramChatId, "Mysql backup creation failed")
+        sys.exit(1)
 
-def check_remote_exists(bucket_name, bucket_dir, backup_name):
-    bucket = storage_client.bucket(bucket_name)
-    stats = storage.Blob(bucket=bucket, name=f"{bucket_dir}/{backup_name}").exists(storage_client)
-    return stats
+def check_remote_exists_s3(bucket_name, bucket_dir, backup_name):
+    try:
+        s3_client.head_bucket(Bucket=bucket_name)
+    except ClientError as error:
+        if error.response['Error']['Code'] == "404":
+            logging.error(f"The s3 bucket {bucket_name} does not exist")
+            send_to_telegram(telergamApiToken, telegramChatId, f"The s3 bucket {bucket_name} does not exist. Skip upload")
+        elif error.response['Error']['Code'] == "403":
+            logging.error(f'AWS boto3 client unauthorized. {format(str(error))}')
+        else:
+            logging.error(f'Exception raised. {format(str(error))}')
+    else:
+        try:
+            s3_client.head_object(Bucket=bucket_name, Key=f"{bucket_dir}/{backup_name}")
+        except ClientError as error:
+            if error.response['Error']['Code'] == "404":
+                return False
+            elif error.response['Error']['Code'] == "403":
+                logging.error(f'AWS boto3 client unauthorized. {format(str(error))}')
+            else:
+                logging.error(f'Exception raised. {format(str(error))}')
+        else:
+            return True
+
+def upload_to_s3(bucket_name, bucket_dir, backup_name):
+    if os.path.isfile(backup_name):
+        try: 
+            s3_client.upload_file(backup_name, bucket_name, f"{bucket_dir}/{backup_name}")
+            logging.info(f"Uploaded {backup_name} to s3://{bucket_name}/{bucket_dir}")
+        except boto3.exceptions.S3UploadFailedError as error:
+            logging.error(f"Failed upload {backup_name} to s3://{bucket_name}/{bucket_dir} with error: {format(str(error))}")
+            send_to_telegram(telergamApiToken, telegramChatId, f"Failed upload {backup_name} to s3://{bucket_name}/{bucket_dir}")
+    else:
+        logging.info(f"Cant find {bucket_dir}/{backup_name} locally. Skip upload")
+
+def check_remote_exists_gcs(bucket_name, bucket_dir, backup_name):
+    try:
+        bucket = storage_client.bucket(bucket_name)
+        if bucket.exists():
+            stats = storage.Blob(bucket=bucket, name=f"{bucket_dir}/{backup_name}").exists(storage_client)
+            return stats
+        else:
+            logging.error(f"The gcs bucket {bucket_name} does not exist")
+            send_to_telegram(telergamApiToken, telegramChatId, f"The gcs bucket {bucket_name} does not exist. Skip upload")
+    except api_core.exceptions.Forbidden as error:
+        logging.error(f'Permission denied. {format(str(error))}')
+    except Exception as error:
+        logging.error(f'Exception raised. {format(str(error))}')
 
 def upload_to_gcs(bucket_name, bucket_dir, backup_name):
     bucket = storage_client.bucket(bucket_name)
@@ -58,20 +105,10 @@ def upload_to_gcs(bucket_name, bucket_dir, backup_name):
             blob.upload_from_filename(f"{backup_name}")
             logging.info(f"Uploaded {backup_name} to gs://{bucket_name}/{bucket_dir}")
         except Exception as error:
-            logging.error(f"Failed upload {backup_name} to gs://{bucket_name}/{bucket_dir} with error: {error}")
-            send_to_telegram(telergamApiToken, telegramChatId, f"Failed upload {backup_name} to gs://{bucket_name}/{bucket_dir}")
-    elif os.path.isdir(backup_name):
-        try:
-            for str_path_file in glob.glob(f"{backup_name}/**/*", recursive=True):
-                if os.path.isfile(str_path_file):
-                    blob = bucket.blob(f"{bucket_dir}/{str_path_file}")
-                    blob.upload_from_filename(str_path_file)
-            logging.info(f"Uploaded {backup_name} to gs://{bucket_name}/{bucket_dir}")
-        except Exception as error:
-            logging.error(f"Failed upload {backup_name} to gs://{bucket_name}/{bucket_dir} with error: {error}")
+            logging.error(f"Failed upload {backup_name} to gs://{bucket_name}/{bucket_dir} with error: {format(str(error))}")
             send_to_telegram(telergamApiToken, telegramChatId, f"Failed upload {backup_name} to gs://{bucket_name}/{bucket_dir}")
     else:
-        logging.info(f"Cant find {backup_name} locally. Skip upload")
+        logging.info(f"Cant find {bucket_dir}/{backup_name} locally. Skip upload")
 
 def make_tarball_and_compress(backup_name):
     with tarfile.open(f"{backup_name}.tar.gz", "w:gz") as tar:
@@ -94,11 +131,19 @@ def main():
     if useCompression:
         make_tarball_and_compress(backupName)
         delete_local_backup(backupName)
-    for index, backup in enumerate(sorted(os.listdir(backupDir), reverse=True, key=os.path.getmtime)):
-        if not check_remote_exists(bucketName, bucketDir, backup):
-            upload_to_gcs(bucketName, bucketDir, backup)
+    for index, file in enumerate(sorted(os.listdir(backupDir), reverse=True, key=os.path.getmtime)):
+        if remoteStorage == "gcs":
+            # Use GOOGLE_APPLICATION_CREDENTIALS env variable for GCP access
+            storage_client = storage.Client()
+            if not check_remote_exists_gcs(bucketName, bucketDir, file):
+                upload_to_gcs(bucketName, bucketDir, file)
+        if remoteStorage == "s3":
+            # Use AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and AWS_DEFAULT_REGION env variables for AWS access
+            s3_client = boto3.client('s3')
+            if not check_remote_exists_s3(bucketName, bucketDir, file):
+                upload_to_s3(bucketName, bucketDir, file)
         if deleteLocally and index >= skipWhenDelete:
-            delete_local_backup(backup)
+            delete_local_backup(file)
 
 
 if __name__ == "__main__":

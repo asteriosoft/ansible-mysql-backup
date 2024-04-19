@@ -8,7 +8,7 @@
   pip:
     name:
       - google-cloud-storage
-      - requests
+      - boto3
 
 - name: Copy mysql-backup.py script
   template:
@@ -22,6 +22,18 @@
     minute: '15'
     hour: '0'
     job: 'mysql-backup.py >> /var/log/mysql-backup.log 2>&1'
+
+- name: Add crontab env variables
+  cron:
+    name: "{{ item.name }}"
+    env: yes
+    job: "{{ item.value }}"
+  when: item.value != ''
+  loop:
+    - { name: 'AWS_ACCESS_KEY_ID', value: '{{ mysql_backup_aws_access_key_id }}' }
+    - { name: 'AWS_SECRET_ACCESS_KEY', value: '{{ mysql_backup_aws_secret_access_key }}' }
+    - { name: 'AWS_DEFAULT_REGION', value: '{{ mysql_backup_aws_region }}' }
+    - { name: 'GOOGLE_APPLICATION_CREDENTIALS', value: '{{ mysql_backup_gcp_credentials_file }}' }
 
 - name: Copy logrotate conf for mysql-backup logs
   copy:
