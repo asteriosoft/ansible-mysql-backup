@@ -50,7 +50,7 @@ def send_to_telegram(api_token,chat_id,message):
 def disk_space_check(path, threshold):
     total, used, free = shutil.disk_usage(path)
     percent = 100 * used / total
-    if percent > threshold:
+    if percent > float(threshold):
         logging.error(f"Backup disk is more than {percent} percent full. Skip backup creation")
         send_to_telegram(telergamApiToken, telegramChatId, "Mysql-backup: Not enough disk space to create a mysql backup")
         sys.exit(1)
