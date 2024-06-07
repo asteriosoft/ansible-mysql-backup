@@ -20,3 +20,10 @@ mysql_backup_aws_region: ""
 
 ## For GCP auth using credentials json file
 mysql_backup_gcp_credentials_file: ""
+
+## Cron scheduler settings
+mysql_backup_cron_minute: 15
+mysql_backup_cron_hour: 0
+mysql_backup_cron_day: "*"
+mysql_backup_cron_month: "*"
+mysql_backup_cron_weekday: "*"

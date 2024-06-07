@@ -19,8 +19,11 @@
 - name: Add cronjob for mysql-backup
   cron:
     name: Mysql backup and upload to remote bucket
-    minute: '15'
-    hour: '0'
+    minute: "{{ mysql_backup_cron_minute }}"
+    hour: "{{ mysql_backup_cron_hour }}"
+    day: "{{ mysql_backup_cron_day }}"
+    month: "{{ mysql_backup_cron_month }}"
+    weekday: "{{ mysql_backup_cron_weekday }}"
     job: 'mysql-backup.py >> /var/log/mysql-backup.log 2>&1'
 
 - name: Add crontab env variables
