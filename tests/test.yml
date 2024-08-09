@@ -9,6 +9,7 @@
     mysql_backup_remote_storage: "s3"
     mysql_backup_bucket_name: "backups"
     mysql_backup_bucket_dir: "mysql"
+    mysql_backup_bucket_dir_split_by_months: true
     mysql_backup_use_compression: true
     mysql_backup_delete_locally: true
     mysql_backup_skip_when_delete_locally: 0
