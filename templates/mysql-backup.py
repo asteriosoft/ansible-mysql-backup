@@ -56,7 +56,7 @@ def disk_space_check(path, threshold):
         sys.exit(1)
 
 def create_mysql_backup(db_host,db_user,db_password,db_name,backup_name):
-    cmd = f"mysqldump --no-tablespaces -h{db_host} -u{db_user} -p{db_password} {db_name} > {backup_name}"
+    cmd = f"mysqldump --no-tablespaces -h{db_host} -u{db_user} -p'{db_password}' {db_name} > {backup_name}"
     process = subprocess.run(cmd, shell=True)
     if process.returncode == 0:
         logging.info(f"Successfully created backup {backup_name}")
