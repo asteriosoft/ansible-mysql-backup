@@ -17,17 +17,18 @@ logging.basicConfig(format="%(asctime)s:%(levelname)s:%(message)s", level=loggin
 
 backupDir = "{{ mysql_backup_local_dir }}"
 backupDiskThreshold = "{{ mysql_backup_disk_space_threshold }}"
-backupName = f"{time.strftime('%Y%m%d.%H%M')}.sql"
+timestamp = time.strftime('%Y%m%d.%H%M')
 remoteStorage = "{{ mysql_backup_remote_storage }}"
 bucketName = "{{ mysql_backup_bucket_name }}"
-bucketDir = {{ 'f\"' + mysql_backup_bucket_dir + '/{time.strftime(\'%Y\')}/{time.strftime(\'%m\')}\"' if mysql_backup_bucket_dir_split_by_months else '\"' + mysql_backup_bucket_dir + '\"' }}
+bucketDir = "{{ mysql_backup_bucket_dir }}"
+splitByMonths = {{ mysql_backup_bucket_dir_split_by_months }}
 useCompression = {{ mysql_backup_use_compression }}
 deleteLocally = {{ mysql_backup_delete_locally }}
 skipWhenDelete = {{ mysql_backup_skip_when_delete_locally }}
 mysqlHost = "{{ mysql_backup_db_host }}"
 mysqlUser = "{{ mysql_backup_db_user}}"
 mysqlPassword = "{{ mysql_backup_db_password  }}"
-mysqlDBName = "{{ mysql_backup_db_name }}"
+mysqlDBNames = {{ mysql_backup_db_names }}
 telergamApiToken = "{{ mysql_backup_telergam_api_token }}"
 telegramChatId = "{{ mysql_backup_telegram_chat_id }}"
 
@@ -163,19 +164,30 @@ def delete_local_backup(backup_path):
 def main():
     disk_space_check(backupDir, backupDiskThreshold)
     os.chdir(backupDir)
-    create_mysql_backup(mysqlHost,mysqlUser,mysqlPassword,mysqlDBName,backupName)
-    if useCompression:
-        make_tarball_and_compress(backupName)
-        delete_local_backup(backupName)
-    for index, file in enumerate(sorted(os.listdir(backupDir), reverse=True, key=os.path.getmtime)):
-        if remoteStorage == "gcs":
-            if not check_remote_exists_gcs(bucketName, bucketDir, file):
-                upload_to_gcs(bucketName, bucketDir, file)
-        if remoteStorage == "s3":
-            if not check_remote_exists_s3(bucketName, bucketDir, file):
-                upload_to_s3(bucketName, bucketDir, file)
-        if deleteLocally and index >= skipWhenDelete:
-            delete_local_backup(file)
+    for dbName in mysqlDBNames:
+        backupName = f"{dbName}.{timestamp}.sql"
+        create_mysql_backup(mysqlHost, mysqlUser, mysqlPassword, dbName, backupName)
+        if useCompression:
+            make_tarball_and_compress(backupName)
+            delete_local_backup(backupName)
+        if splitByMonths:
+            dbBucketDir = f"{bucketDir}/{dbName}/{time.strftime('%Y')}/{time.strftime('%m')}"
+        else:
+            dbBucketDir = f"{bucketDir}/{dbName}"
+        db_files = sorted(
+            [f for f in os.listdir(backupDir) if f.startswith(f"{dbName}.")],
+            reverse=True,
+            key=os.path.getmtime
+        )
+        for index, file in enumerate(db_files):
+            if remoteStorage == "gcs":
+                if not check_remote_exists_gcs(bucketName, dbBucketDir, file):
+                    upload_to_gcs(bucketName, dbBucketDir, file)
+            if remoteStorage == "s3":
+                if not check_remote_exists_s3(bucketName, dbBucketDir, file):
+                    upload_to_s3(bucketName, dbBucketDir, file)
+            if deleteLocally and index >= skipWhenDelete:
+                delete_local_backup(file)
 
 
 if __name__ == "__main__":
